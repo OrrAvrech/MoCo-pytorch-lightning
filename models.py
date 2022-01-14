@@ -7,11 +7,17 @@ class BackboneModel(nn.Module):
     def __init__(self, feature_dim=128, arch=None, bn_splits=1):
         super(BackboneModel, self).__init__()
 
-        # use split batchnorm
         norm_layer = nn.BatchNorm2d
         resnet_arch = getattr(resnet, arch)
         net = resnet_arch(num_classes=feature_dim, norm_layer=norm_layer)
-        self.net = net
+        self.net = []
+        for name, module in net.named_children():
+            if isinstance(module, nn.MaxPool2d):
+                continue
+            if isinstance(module, nn.Linear):
+                self.net.append(nn.Flatten(1))
+            self.net.append(module)
+        self.net = nn.Sequential(*self.net)
 
     def forward(self, x):
         x = self.net(x)
@@ -54,11 +60,11 @@ class MoCo(nn.Module):
         batch_size = keys.shape[0]
 
         ptr = int(self.queue_ptr)
-        assert self.K % batch_size == 0  # for simplicity
+        assert self.k % batch_size == 0  # for simplicity
 
         # replace the keys at ptr (dequeue and enqueue)
         self.queue[:, ptr:ptr + batch_size] = keys.t()  # transpose
-        ptr = (ptr + batch_size) % self.K  # move pointer
+        ptr = (ptr + batch_size) % self.k  # move pointer
 
         self.queue_ptr[0] = ptr
 
@@ -109,7 +115,7 @@ class MoCo(nn.Module):
         logits = torch.cat([l_pos, l_neg], dim=1)
 
         # apply temperature
-        logits /= self.T
+        logits /= self.t
 
         # labels: positive key indicators
         labels = torch.zeros(logits.shape[0], dtype=torch.long).cuda()

@@ -98,11 +98,12 @@ def main():
 
     test_transform = transforms.Compose([
         transforms.ToTensor(),
+        transforms.Resize((32, 32)),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225])])
 
-    train_ds = ImagenettePair(transform=transforms)
-    train_loader = DataLoader(train_ds, batch_size=Params.MoCo.BATCH_SIZE, shuffle=True)
+    train_ds = ImagenettePair(transform=train_transform)
+    train_loader = DataLoader(train_ds, batch_size=Params.MoCo.BATCH_SIZE, shuffle=True, drop_last=True)
 
     memory_ds = ImagenettePair(transform=test_transform)
     memory_loader = DataLoader(memory_ds, batch_size=Params.MoCo.BATCH_SIZE, shuffle=False)
@@ -141,3 +142,7 @@ def main():
         # save model
         torch.save({'epoch': epoch, 'state_dict': model.state_dict(), 'optimizer': optimizer.state_dict(), },
                    Params.RESULTS_DIR + '/model_last.pth')
+
+
+if __name__ == '__main__':
+    main()

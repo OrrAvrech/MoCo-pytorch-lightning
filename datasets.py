@@ -23,6 +23,9 @@ class Imagenette(Dataset):
         self.file_names = get_image_files(path, folders=split)
         self.transform = transform
         self.split = split
+        self.label_dict = self.get_label_dict()
+        self.classes = list(self.label_dict.values())
+        self.targets = [i for i, x in enumerate(self.classes)]
 
     def __len__(self):
         return len(self.file_names)
@@ -30,7 +33,7 @@ class Imagenette(Dataset):
     def __getitem__(self, idx):
         f_name = self.file_names[idx]
         image = Image.open(f_name)
-        label = self.get_label_dict()[parent_label(f_name)]
+        label = self.classes.index(self.label_dict[parent_label(f_name)])
         return image, label
 
     @classmethod
@@ -41,7 +44,7 @@ class Imagenette(Dataset):
 class ImagenettePair(Imagenette):
     def __getitem__(self, idx):
         f_name = self.file_names[idx]
-        image = Image.open(f_name)
+        image = Image.open(f_name).convert('RGB')
         image_1 = image
         image_2 = image
         if self.transform is not None:
