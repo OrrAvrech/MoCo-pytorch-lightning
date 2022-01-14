@@ -33,7 +33,7 @@ def main():
     # callbacks
     csv_logger = CSVLogger(save_dir=Params.RESULTS_DIR, name='pl_logs')
 
-    trainer = Trainer(logger=csv_logger)
+    trainer = Trainer(logger=csv_logger, gpus=1, max_epochs=Params.Classifier.EPOCHS)
     trainer.fit(classifier, train_loader, val_loader)
 
 

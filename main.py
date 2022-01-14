@@ -90,7 +90,7 @@ def main():
 
     # data loaders
     train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(32),
+        transforms.RandomResizedCrop(128),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
         transforms.RandomGrayscale(p=0.2),
@@ -100,7 +100,7 @@ def main():
 
     test_transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Resize((32, 32)),
+        transforms.CenterCrop(128),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225])])
 
@@ -119,7 +119,6 @@ def main():
         k=Params.MoCo.K,
         m=Params.MoCo.M,
         t=Params.MoCo.T,
-        arch=Params.MoCo.ARCH,
         symmetric=Params.MoCo.SYMMETRIC,
     ).cuda()
 

@@ -9,15 +9,14 @@ class Params:
         K = 4096
         M = 0.99
         T = 0.07
-        ARCH = 'resnet18'
         SYMMETRIC = True
 
         # MoCo Training
-        EPOCHS = 10
+        EPOCHS = 500
         LR = 0.06
         WEIGHT_DECAY = 5e-4
         MOMENTUM = 0.9
-        BATCH_SIZE = 32
+        BATCH_SIZE = 256
 
     class KNN:
         # K-nearest-neighbor
@@ -30,5 +29,6 @@ class Params:
         MOMENTUM = 0.9
         WEIGHT_DECAY = 5e-4
         BATCH_SIZE = 128
+        EPOCHS = 50
 
     RESULTS_DIR = '.'
