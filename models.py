@@ -1,6 +1,10 @@
 import torch
-from torchvision.models import resnet
+from torchmetrics import Accuracy
+from params import Params
+from torchvision.models import resnet, resnet50
 import torch.nn as nn
+import pytorch_lightning as pl
+from torch.nn import functional as F
 
 
 class BackboneModel(nn.Module):
@@ -18,7 +22,7 @@ class BackboneModel(nn.Module):
 
 
 class MoCo(nn.Module):
-    def __init__(self, dim, k, m, t, arch='resnet18', symmetric=True):
+    def __init__(self, dim=128, k=4096, m=0.99, t=0.07, arch='resnet18', symmetric=True):
         super(MoCo, self).__init__()
 
         self.k = k
@@ -27,8 +31,10 @@ class MoCo(nn.Module):
         self.symmetric = symmetric
 
         # create the encoders
-        self.encoder_q = BackboneModel(feature_dim=dim, arch=arch)
-        self.encoder_k = BackboneModel(feature_dim=dim, arch=arch)
+        # self.encoder_q = BackboneModel(feature_dim=dim, arch=arch)
+        # self.encoder_k = BackboneModel(feature_dim=dim, arch=arch)
+        self.encoder_q = resnet50(num_classes=dim)
+        self.encoder_k = resnet50(num_classes=dim)
 
         for param_q, param_k in zip(self.encoder_q.parameters(), self.encoder_k.parameters()):
             param_k.data.copy_(param_q.data)  # initialize
@@ -141,4 +147,50 @@ class MoCo(nn.Module):
 
         self._dequeue_and_enqueue(k)
 
+        return loss
+
+
+class LitLinearClassifier(pl.LightningModule):
+    def __init__(self, num_classes, pre_trained=True, ckpt_path=None):
+        super(LitLinearClassifier, self).__init__()
+        if ckpt_path is not None:
+            moco = MoCo().load_state_dict(torch.load(ckpt_path))
+            backbone = moco.encoder_q
+        else:
+            backbone = resnet50(pretrained=pre_trained)
+        num_filters = backbone.fc.in_features
+        layers = list(backbone.children())[:-1]
+        self.feature_extractor = nn.Sequential(*layers)
+        self.classifier = nn.Linear(num_filters, num_classes)
+        self.accuracy = Accuracy()
+
+    def forward(self, x):
+        self.feature_extractor.eval()
+        with torch.no_grad():
+            representations = self.feature_extractor(x).flatten(1)
+        x = self.classifier(representations)
+        return x
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.SGD(self.parameters(),
+                                    lr=Params.Classifier.LR,
+                                    weight_decay=Params.Classifier.WEIGHT_DECAY,
+                                    momentum=Params.Classifier.MOMENTUM)
+        return optimizer
+
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+        loss = F.cross_entropy(y_hat, y)
+        self.log('train_loss', loss, on_epoch=True, on_step=False, prog_bar=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+        loss = F.cross_entropy(y_hat, y)
+        pred = torch.argmax(F.log_softmax(y_hat, dim=1), dim=1)
+        acc = self.accuracy(pred, y)
+        self.log('val_loss', loss, on_epoch=True, on_step=False, prog_bar=True)
+        self.log('val_acc', acc, on_epoch=True, on_step=False, prog_bar=True)
         return loss

@@ -41,6 +41,10 @@ class Imagenette(Dataset):
     def get_label_dict(cls):
         return cls.lbl_dict
 
+    @classmethod
+    def get_num_classes(cls):
+        return len(list(cls.get_label_dict().values()))
+
 
 class ImagenettePair(Imagenette):
     def __getitem__(self, idx):

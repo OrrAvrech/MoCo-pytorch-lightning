@@ -8,9 +8,8 @@ class Params:
         DIM = 128
         K = 4096
         M = 0.99
-        T = 0.1
+        T = 0.07
         ARCH = 'resnet18'
-        BN_SPLITS = 1
         SYMMETRIC = True
 
         # MoCo Training
@@ -24,5 +23,12 @@ class Params:
         # K-nearest-neighbor
         K = 200
         T = 0.1
+
+    class Classifier:
+        # Transfer Learning
+        LR = 1e-3
+        MOMENTUM = 0.9
+        WEIGHT_DECAY = 5e-4
+        BATCH_SIZE = 128
 
     RESULTS_DIR = '.'
