@@ -4,20 +4,13 @@ import torch.nn as nn
 
 
 class BackboneModel(nn.Module):
-    def __init__(self, feature_dim=128, arch=None, bn_splits=1):
+    def __init__(self, feature_dim=128, arch=None):
         super(BackboneModel, self).__init__()
 
         norm_layer = nn.BatchNorm2d
         resnet_arch = getattr(resnet, arch)
         net = resnet_arch(num_classes=feature_dim, norm_layer=norm_layer)
-        self.net = []
-        for name, module in net.named_children():
-            if isinstance(module, nn.MaxPool2d):
-                continue
-            if isinstance(module, nn.Linear):
-                self.net.append(nn.Flatten(1))
-            self.net.append(module)
-        self.net = nn.Sequential(*self.net)
+        self.net = net
 
     def forward(self, x):
         x = self.net(x)

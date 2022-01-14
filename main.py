@@ -5,7 +5,7 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 from models import MoCo
 from params import Params
-from datasets import ImagenettePair
+from datasets import Imagenette, ImagenettePair
 import pandas as pd
 from torch.nn import functional as F
 
@@ -36,17 +36,19 @@ def train(net, data_loader, optimizer, epoch):
 def test(net, memory_data_loader, test_data_loader, epoch):
     net.eval()
     classes = len(memory_data_loader.dataset.classes)
-    total_top1, total_top5, total_num, feature_bank = 0.0, 0.0, 0, []
+    total_top1, total_top5, total_num = 0.0, 0.0, 0
+    feature_bank, memory_targets = [], []
     with torch.no_grad():
         # generate feature bank
         for data, target in tqdm(memory_data_loader, desc='Feature extracting'):
             feature = net(data.cuda(non_blocking=True))
             feature = F.normalize(feature, dim=1)
             feature_bank.append(feature)
+            memory_targets.append(target)
         # [D, N]
         feature_bank = torch.cat(feature_bank, dim=0).t().contiguous()
         # [N]
-        feature_labels = torch.tensor(memory_data_loader.dataset.targets, device=feature_bank.device)
+        feature_labels = torch.cat(memory_targets, dim=0).clone().detach().to(feature_bank.device)
         # loop test data to predict the label by weighted knn search
         test_bar = tqdm(test_data_loader)
         for data, target in test_bar:
@@ -105,10 +107,10 @@ def main():
     train_ds = ImagenettePair(transform=train_transform)
     train_loader = DataLoader(train_ds, batch_size=Params.MoCo.BATCH_SIZE, shuffle=True, drop_last=True)
 
-    memory_ds = ImagenettePair(transform=test_transform)
+    memory_ds = Imagenette(transform=test_transform)
     memory_loader = DataLoader(memory_ds, batch_size=Params.MoCo.BATCH_SIZE, shuffle=False)
 
-    test_ds = ImagenettePair(split='val', transform=test_transform)
+    test_ds = Imagenette(split='val', transform=test_transform)
     test_loader = DataLoader(test_ds, batch_size=Params.MoCo.BATCH_SIZE, shuffle=False)
 
     # create model

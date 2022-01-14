@@ -25,14 +25,15 @@ class Imagenette(Dataset):
         self.split = split
         self.label_dict = self.get_label_dict()
         self.classes = list(self.label_dict.values())
-        self.targets = [i for i, x in enumerate(self.classes)]
 
     def __len__(self):
         return len(self.file_names)
 
     def __getitem__(self, idx):
         f_name = self.file_names[idx]
-        image = Image.open(f_name)
+        image = Image.open(f_name).convert('RGB')
+        if self.transform is not None:
+            image = self.transform(image)
         label = self.classes.index(self.label_dict[parent_label(f_name)])
         return image, label
 
