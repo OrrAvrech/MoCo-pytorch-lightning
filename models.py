@@ -8,20 +8,13 @@ import pytorch_lightning as pl
 from torch.nn import functional as F
 
 
-class Backbone(nn.Module):
-    def __init__(self, feature_dim=128, add_mlp_head=False):
-        super(Backbone, self).__init__()
+class BackboneModel(nn.Module):
+    def __init__(self, feature_dim=128, arch=None):
+        super(BackboneModel, self).__init__()
 
-        backbone = resnet50(num_classes=feature_dim)
-        if add_mlp_head:
-            num_filters = backbone.fc.in_features
-            layers = list(backbone.children())
-            mlp = nn.Sequential(nn.Linear(num_filters, 2048),
-                                nn.ReLu(),
-                                nn.Linear(2048, feature_dim))
-            net = nn.Sequential(*layers[:-1], *mlp.children())
-        else:
-            net = backbone
+        norm_layer = nn.BatchNorm2d
+        resnet_arch = getattr(resnet, arch)
+        net = resnet_arch(num_classes=feature_dim, norm_layer=norm_layer)
         self.net = net
 
     def forward(self, x):
@@ -159,7 +152,7 @@ class MoCo(nn.Module):
 
 
 class LitMoCo(pl.LightningModule):
-    def __init__(self, dim=128, k=4096, m=0.99, t=0.07, symmetric=True, bank_data_loader=None, add_mlp_head=False):
+    def __init__(self, dim=128, k=4096, m=0.99, t=0.07, symmetric=True, bank_data_loader=None):
         super(LitMoCo, self).__init__()
 
         self.k = k
@@ -173,8 +166,8 @@ class LitMoCo(pl.LightningModule):
         self.accuracy = Accuracy()
 
         # create the encoders
-        self.encoder_q = Backbone(feature_dim=dim, add_mlp_head=add_mlp_head)
-        self.encoder_k = Backbone(feature_dim=dim, add_mlp_head=add_mlp_head)
+        self.encoder_q = resnet50(num_classes=dim)
+        self.encoder_k = resnet50(num_classes=dim)
 
         for param_q, param_k in zip(self.encoder_q.parameters(), self.encoder_k.parameters()):
             param_k.data.copy_(param_q.data)  # initialize

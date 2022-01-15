@@ -10,17 +10,19 @@ from pytorch_lightning.loggers import CSVLogger
 def main():
     # data loaders
     train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(Params.INPUT_SIZE),
+        transforms.RandomResizedCrop(32),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
         transforms.RandomGrayscale(p=0.2),
-        transforms.GaussianBlur(kernel_size=int(0.1 * Params.INPUT_SIZE)+1),
-        transforms.ToTensor()])
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])])
 
     test_transform = transforms.Compose([
-        transforms.Resize(Params.INPUT_SIZE + 10),
-        transforms.CenterCrop(Params.INPUT_SIZE),
-        transforms.ToTensor()])
+        transforms.ToTensor(),
+        transforms.CenterCrop(32),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])])
 
     train_ds = ImagenettePair(transform=train_transform)
     train_loader = DataLoader(train_ds, batch_size=Params.MoCo.BATCH_SIZE, shuffle=True, drop_last=True)
@@ -36,8 +38,7 @@ def main():
                    m=Params.MoCo.M,
                    t=Params.MoCo.T,
                    symmetric=Params.MoCo.SYMMETRIC,
-                   add_mlp_head=Params.MoCo.ADD_MLP_HEAD,
-                   bank_data_loader=bank_loader)
+                   bank_data_loader=bank_loader).cuda()
 
     # callbacks
     csv_logger = CSVLogger(save_dir=Params.RESULTS_DIR, name='pl_logs_moco')
