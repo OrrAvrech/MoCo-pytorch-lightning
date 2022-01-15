@@ -10,13 +10,14 @@ class Params:
         M = 0.99
         T = 0.07
         SYMMETRIC = True
+        ADD_MLP_HEAD = False
 
         # MoCo Training
         EPOCHS = 500
         LR = 0.06
         WEIGHT_DECAY = 5e-4
         MOMENTUM = 0.9
-        BATCH_SIZE = 32
+        BATCH_SIZE = 64
 
     class KNN:
         # K-nearest-neighbor
@@ -31,4 +32,5 @@ class Params:
         BATCH_SIZE = 128
         EPOCHS = 50
 
+    INPUT_SIZE = 128
     RESULTS_DIR = '.'
