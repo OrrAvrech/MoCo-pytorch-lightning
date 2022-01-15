@@ -26,10 +26,10 @@ def main():
     val_ds = Imagenette(split='val', transform=test_transform)
     val_loader = DataLoader(val_ds, batch_size=Params.Classifier.BATCH_SIZE, shuffle=False)
 
-    classifier = LitLinearClassifier(num_classes=num_classes, pre_trained=False)
+    classifier = LitLinearClassifier(num_classes=num_classes, ckpt_path=Params.SSL_CKPT_PATH)
 
     # callbacks
-    csv_logger = CSVLogger(save_dir=Params.RESULTS_DIR, name='pl_logs_classifier')
+    csv_logger = CSVLogger(save_dir=Params.RESULTS_DIR, name='pl_logs_classifier_moco')
     early_stop_cb = EarlyStopping(monitor='val_loss', patience=6)
 
     trainer = Trainer(logger=csv_logger, gpus=1, max_epochs=Params.Classifier.EPOCHS, callbacks=[early_stop_cb])

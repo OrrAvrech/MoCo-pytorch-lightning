@@ -2,7 +2,7 @@ import torch
 from tqdm import tqdm
 from torchmetrics import Accuracy
 from params import Params
-from torchvision.models import resnet, resnet50
+from torchvision.models import resnet50
 import torch.nn as nn
 import pytorch_lightning as pl
 from torch.nn import functional as F
@@ -17,7 +17,7 @@ class Backbone(nn.Module):
             num_filters = backbone.fc.in_features
             layers = list(backbone.children())
             mlp = nn.Sequential(nn.Linear(num_filters, 2048),
-                                nn.ReLu(),
+                                nn.ReLU(),
                                 nn.Linear(2048, feature_dim))
             net = nn.Sequential(*layers[:-1], *mlp.children())
         else:
@@ -158,18 +158,18 @@ class MoCo(nn.Module):
         return loss
 
 
-class LitMoCo(pl.LightningModule):
-    def __init__(self, dim=128, k=4096, m=0.99, t=0.07, symmetric=True, bank_data_loader=None, add_mlp_head=False):
-        super(LitMoCo, self).__init__()
+class LitMoCoVal(pl.LightningModule):
+    def __init__(self, dim=128, k=4096, m=0.99, t=0.07, bank_data_loader=None, add_mlp_head=False):
+        super(LitMoCoVal, self).__init__()
+        self.save_hyperparameters()
 
         self.k = k
         self.m = m
         self.t = t
-        self.symmetric = symmetric
         # bank_data_loader for KNN evaluation
         self.bank_data_loader = bank_data_loader
-        self.feature_bank = torch.zeros((dim, self.bank_data_loader.batch_size))
-        self.feature_labels = torch.zeros((self.bank_data_loader.batch_size,))
+        self.feature_bank = torch.zeros((dim, Params.MoCo.BATCH_SIZE))
+        self.feature_labels = torch.zeros((Params.MoCo.BATCH_SIZE,))
         self.accuracy = Accuracy()
 
         # create the encoders
@@ -219,14 +219,11 @@ class LitMoCo(pl.LightningModule):
         l_neg = torch.einsum('nc,ck->nk', [q, self.queue.clone().detach()])
 
         # logits: Nx(1+K)
-        logits = torch.cat([l_pos, l_neg], dim=1)
-
-        # apply temperature
-        logits /= self.t
+        logits = torch.cat([l_pos, l_neg], dim=1) / self.t
 
         # labels: positive key indicators
-        labels = torch.zeros(logits.shape[0], dtype=torch.long).cuda()
-        loss = nn.CrossEntropyLoss().cuda()(logits, labels)
+        labels = torch.zeros(logits.shape[0], dtype=torch.long)
+        loss = nn.CrossEntropyLoss()(logits, labels)
 
         return loss, q, k
 
@@ -235,14 +232,8 @@ class LitMoCo(pl.LightningModule):
         with torch.no_grad():
             self._momentum_update_key_encoder()
 
-        # compute loss
-        if self.symmetric:  # asymmetric loss
-            loss_12, q1, k2 = self._contrastive_loss(im1, im2)
-            loss_21, q2, k1 = self._contrastive_loss(im2, im1)
-            loss = loss_12 + loss_21
-            k = torch.cat([k1, k2], dim=0)
-        else:  # asymmetric loss
-            loss, q, k = self._contrastive_loss(im1, im2)
+        # contrastive loss
+        loss, q, k = self._contrastive_loss(im1, im2)
 
         with torch.no_grad():
             self._dequeue_and_enqueue(k)
@@ -254,7 +245,8 @@ class LitMoCo(pl.LightningModule):
                                     lr=Params.MoCo.LR,
                                     weight_decay=Params.MoCo.WEIGHT_DECAY,
                                     momentum=Params.MoCo.MOMENTUM)
-        return optimizer
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, Params.MoCo.EPOCHS)
+        return [optimizer], [lr_scheduler]
 
     def training_step(self, batch, batch_idx):
         im1, im2 = batch
@@ -310,12 +302,104 @@ class LitMoCo(pl.LightningModule):
             self.log('top1_acc', self.accuracy, on_step=False, on_epoch=True, prog_bar=True)
 
 
+class LitMoCo(pl.LightningModule):
+    def __init__(self, dim=128, k=4096, m=0.99, t=0.07, add_mlp_head=False):
+        super(LitMoCo, self).__init__()
+        self.save_hyperparameters()
+
+        self.k = k
+        self.m = m
+        self.t = t
+
+        # create the encoders
+        self.encoder_q = Backbone(feature_dim=dim, add_mlp_head=add_mlp_head)
+        self.encoder_k = Backbone(feature_dim=dim, add_mlp_head=add_mlp_head)
+
+        for param_q, param_k in zip(self.encoder_q.parameters(), self.encoder_k.parameters()):
+            param_k.data.copy_(param_q.data)
+            param_k.requires_grad = False
+
+        # create the queue
+        self.register_buffer("queue", torch.randn(dim, self.k))
+        self.queue = nn.functional.normalize(self.queue, dim=0)
+
+        self.register_buffer("queue_ptr", torch.zeros(1, dtype=torch.long))
+
+    def _momentum_update_key_encoder(self):
+        for param_q, param_k in zip(self.encoder_q.parameters(), self.encoder_k.parameters()):
+            param_k.data = param_k.data * self.m + param_q.data * (1. - self.m)
+
+    def _update_queue(self, keys):
+        batch_size = keys.shape[0]
+
+        ptr = int(self.queue_ptr)
+        assert self.k % batch_size == 0
+
+        # replace the keys at ptr (dequeue and enqueue)
+        self.queue[:, ptr:ptr + batch_size] = keys.t()  # transpose
+        ptr = (ptr + batch_size) % self.k  # move pointer
+
+        self.queue_ptr[0] = ptr
+
+    def _contrastive_loss(self, im_q, im_k):
+        # compute query features
+        q = self.encoder_q(im_q)  # queries: NxC
+        q = nn.functional.normalize(q, dim=1)  # already normalized
+
+        # compute key features
+        with torch.no_grad():
+            k = self.encoder_k(im_k)  # keys: NxC
+            k = nn.functional.normalize(k, dim=1)  # already normalized
+
+        # compute logits
+        # positive logits: Nx1
+        l_pos = torch.einsum('nc,nc->n', [q, k]).unsqueeze(-1)
+        # negative logits: NxK
+        l_neg = torch.einsum('nc,ck->nk', [q, self.queue.clone().detach()])
+
+        # logits: Nx(1+K)
+        logits = torch.cat([l_pos, l_neg], dim=1) / self.t
+
+        # labels: positive key indicators
+        labels = torch.zeros(logits.shape[0], dtype=torch.long)
+        loss = nn.CrossEntropyLoss()(logits, labels)
+
+        return loss, q, k
+
+    def forward(self, im1, im2):
+        # update the momentum key encoder without backprop
+        with torch.no_grad():
+            self._momentum_update_key_encoder()
+
+        # contrastive loss
+        loss, q, k = self._contrastive_loss(im1, im2)
+
+        with torch.no_grad():
+            self._update_queue(k)
+
+        return loss
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.SGD(self.parameters(),
+                                    lr=Params.MoCo.LR,
+                                    weight_decay=Params.MoCo.WEIGHT_DECAY,
+                                    momentum=Params.MoCo.MOMENTUM)
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, Params.MoCo.EPOCHS)
+        return [optimizer], [lr_scheduler]
+
+    def training_step(self, batch, batch_idx):
+        im1, im2 = batch
+        loss = self(im1, im2)
+        self.log('train_loss', loss, on_epoch=True, on_step=False, prog_bar=True)
+        return loss
+
+
 class LitLinearClassifier(pl.LightningModule):
     def __init__(self, num_classes, pre_trained=True, ckpt_path=None):
         super(LitLinearClassifier, self).__init__()
         if ckpt_path is not None:
-            moco = MoCo().load_state_dict(torch.load(ckpt_path))
-            backbone = moco.encoder_q
+            moco = LitMoCo.load_from_checkpoint(checkpoint_path=ckpt_path)
+            backbone = moco.encoder_q.net
         else:
             backbone = resnet50(pretrained=pre_trained)
         num_filters = backbone.fc.in_features

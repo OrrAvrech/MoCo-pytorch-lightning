@@ -35,9 +35,7 @@ def main():
                    k=Params.MoCo.K,
                    m=Params.MoCo.M,
                    t=Params.MoCo.T,
-                   symmetric=Params.MoCo.SYMMETRIC,
-                   add_mlp_head=Params.MoCo.ADD_MLP_HEAD,
-                   bank_data_loader=bank_loader)
+                   add_mlp_head=Params.MoCo.ADD_MLP_HEAD)
 
     # callbacks
     csv_logger = CSVLogger(save_dir=Params.RESULTS_DIR, name='pl_logs_moco')

@@ -9,12 +9,11 @@ class Params:
         K = 4096
         M = 0.99
         T = 0.07
-        SYMMETRIC = True
-        ADD_MLP_HEAD = False
+        ADD_MLP_HEAD = True
 
         # MoCo Training
-        EPOCHS = 500
-        LR = 0.06
+        EPOCHS = 200
+        LR = 0.03
         WEIGHT_DECAY = 5e-4
         MOMENTUM = 0.9
         BATCH_SIZE = 64
@@ -33,4 +32,6 @@ class Params:
         EPOCHS = 50
 
     INPUT_SIZE = 128
-    RESULTS_DIR = '.'
+    WORKING_DIR = Path.cwd()
+    RESULTS_DIR = WORKING_DIR
+    SSL_CKPT_PATH = WORKING_DIR / 'pl_logs_moco/version_3/checkpoints/epoch=87-step=12935.ckpt'
