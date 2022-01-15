@@ -253,6 +253,7 @@ class LitMoCo(pl.LightningModule):
         im1, im2 = batch
         loss = self(im1, im2)
         self.log('train_loss', loss, on_epoch=True, on_step=False, prog_bar=True)
+        return loss
 
     def on_validation_epoch_start(self):
         if self.bank_data_loader is not None:

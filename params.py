@@ -16,7 +16,7 @@ class Params:
         LR = 0.06
         WEIGHT_DECAY = 5e-4
         MOMENTUM = 0.9
-        BATCH_SIZE = 256
+        BATCH_SIZE = 32
 
     class KNN:
         # K-nearest-neighbor
