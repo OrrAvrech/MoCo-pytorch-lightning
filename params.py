@@ -9,14 +9,14 @@ class Params:
         K = 4096
         M = 0.99
         T = 0.07
-        ADD_MLP_HEAD = True
+        ADD_MLP_HEAD = False
 
         # MoCo Training
         EPOCHS = 200
         LR = 0.03
         WEIGHT_DECAY = 5e-4
         MOMENTUM = 0.9
-        BATCH_SIZE = 64
+        BATCH_SIZE = 128
 
     class KNN:
         # K-nearest-neighbor
@@ -25,9 +25,9 @@ class Params:
 
     class Classifier:
         # Transfer Learning
-        LR = 1e-3
+        LR = 0.03
         MOMENTUM = 0.9
-        WEIGHT_DECAY = 5e-4
+        WEIGHT_DECAY = 0
         BATCH_SIZE = 128
         EPOCHS = 50
 

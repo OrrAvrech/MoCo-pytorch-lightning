@@ -2,7 +2,7 @@ import torch
 import random
 from params import Params
 from datasets import Imagenette, ImagenettePair
-from models import LitMoCo, LitMoCoVal
+from models import LitMoCo
 from torchvision import transforms
 from torch.utils.data import DataLoader
 from pytorch_lightning import Trainer
@@ -41,7 +41,9 @@ def main():
     moco = LitMoCo(dim=Params.MoCo.DIM,
                    k=Params.MoCo.K,
                    m=Params.MoCo.M,
-                   t=Params.MoCo.T)
+                   t=Params.MoCo.T,
+                   add_mlp_head=Params.MoCo.ADD_MLP_HEAD,
+                   bank_data_loader=bank_loader)
 
     # callbacks
     csv_logger = CSVLogger(save_dir=Params.RESULTS_DIR, name='pl_logs_moco')
