@@ -15,11 +15,12 @@ class Backbone(nn.Module):
         backbone = resnet50(num_classes=feature_dim)
         if add_mlp_head:
             num_filters = backbone.fc.in_features
-            layers = list(backbone.children())
+            layers = list(backbone.children())[:-1]
             mlp = nn.Sequential(nn.Linear(num_filters, 2048),
-                                nn.ReLU(),
+                                nn.ReLU(inplace=True),
                                 nn.Linear(2048, feature_dim))
-            net = nn.Sequential(*layers[:-1], *mlp.children())
+            net = nn.Sequential(*layers, *mlp.children())
+
         else:
             net = backbone
         self.net = net
@@ -159,7 +160,7 @@ class MoCo(nn.Module):
 
 
 class LitMoCoVal(pl.LightningModule):
-    def __init__(self, dim=128, k=4096, m=0.99, t=0.07, bank_data_loader=None, add_mlp_head=False):
+    def __init__(self, dim=128, k=4096, m=0.99, t=0.07, add_mlp_head=False, bank_data_loader=None):
         super(LitMoCoVal, self).__init__()
         self.save_hyperparameters()
 
@@ -190,7 +191,7 @@ class LitMoCoVal(pl.LightningModule):
         for param_q, param_k in zip(self.encoder_q.parameters(), self.encoder_k.parameters()):
             param_k.data = param_k.data * self.m + param_q.data * (1. - self.m)
 
-    def _dequeue_and_enqueue(self, keys):
+    def _update_queue(self, keys):
         batch_size = keys.shape[0]
 
         ptr = int(self.queue_ptr)
@@ -205,25 +206,26 @@ class LitMoCoVal(pl.LightningModule):
     def _contrastive_loss(self, im_q, im_k):
         # compute query features
         q = self.encoder_q(im_q)  # queries: NxC
-        q = nn.functional.normalize(q, dim=1)  # already normalized
+        q = nn.functional.normalize(q, dim=1)
 
         # compute key features
         with torch.no_grad():
             k = self.encoder_k(im_k)  # keys: NxC
-            k = nn.functional.normalize(k, dim=1)  # already normalized
+            k = nn.functional.normalize(k, dim=1)
 
-        # compute logits
         # positive logits: Nx1
-        l_pos = torch.einsum('nc,nc->n', [q, k]).unsqueeze(-1)
+        # scalar product for each element in batch
+        l_pos = torch.sum((q * k), dim=1).unsqueeze(-1)
         # negative logits: NxK
-        l_neg = torch.einsum('nc,ck->nk', [q, self.queue.clone().detach()])
+        # matrix mul between query features and queue keys
+        l_neg = torch.matmul(q, self.queue.clone().detach())
 
         # logits: Nx(1+K)
         logits = torch.cat([l_pos, l_neg], dim=1) / self.t
 
         # labels: positive key indicators
-        labels = torch.zeros(logits.shape[0], dtype=torch.long)
-        loss = nn.CrossEntropyLoss()(logits, labels)
+        labels = torch.zeros(logits.shape[0], dtype=torch.long).cuda()
+        loss = nn.CrossEntropyLoss().cuda()(logits, labels)
 
         return loss, q, k
 
@@ -236,7 +238,7 @@ class LitMoCoVal(pl.LightningModule):
         loss, q, k = self._contrastive_loss(im1, im2)
 
         with torch.no_grad():
-            self._dequeue_and_enqueue(k)
+            self._update_queue(k)
 
         return loss
 
@@ -303,7 +305,7 @@ class LitMoCoVal(pl.LightningModule):
 
 
 class LitMoCo(pl.LightningModule):
-    def __init__(self, dim=128, k=4096, m=0.99, t=0.07, add_mlp_head=False):
+    def __init__(self, dim=128, k=4096, m=0.99, t=0.07):
         super(LitMoCo, self).__init__()
         self.save_hyperparameters()
 
@@ -311,15 +313,15 @@ class LitMoCo(pl.LightningModule):
         self.m = m
         self.t = t
 
-        # create the encoders
-        self.encoder_q = Backbone(feature_dim=dim, add_mlp_head=add_mlp_head)
-        self.encoder_k = Backbone(feature_dim=dim, add_mlp_head=add_mlp_head)
+        # encoders
+        self.encoder_q = resnet50(num_classes=dim)
+        self.encoder_k = resnet50(num_classes=dim)
 
         for param_q, param_k in zip(self.encoder_q.parameters(), self.encoder_k.parameters()):
             param_k.data.copy_(param_q.data)
             param_k.requires_grad = False
 
-        # create the queue
+        # queue
         self.register_buffer("queue", torch.randn(dim, self.k))
         self.queue = nn.functional.normalize(self.queue, dim=0)
 
@@ -344,25 +346,26 @@ class LitMoCo(pl.LightningModule):
     def _contrastive_loss(self, im_q, im_k):
         # compute query features
         q = self.encoder_q(im_q)  # queries: NxC
-        q = nn.functional.normalize(q, dim=1)  # already normalized
+        q = nn.functional.normalize(q, dim=1)
 
         # compute key features
         with torch.no_grad():
             k = self.encoder_k(im_k)  # keys: NxC
-            k = nn.functional.normalize(k, dim=1)  # already normalized
+            k = nn.functional.normalize(k, dim=1)
 
-        # compute logits
         # positive logits: Nx1
-        l_pos = torch.einsum('nc,nc->n', [q, k]).unsqueeze(-1)
+        # scalar product for each element in batch
+        l_pos = torch.sum((q * k), dim=1).unsqueeze(-1)
         # negative logits: NxK
-        l_neg = torch.einsum('nc,ck->nk', [q, self.queue.clone().detach()])
+        # matrix mul between query features and queue keys
+        l_neg = torch.matmul(q, self.queue.clone().detach())
 
         # logits: Nx(1+K)
         logits = torch.cat([l_pos, l_neg], dim=1) / self.t
 
         # labels: positive key indicators
-        labels = torch.zeros(logits.shape[0], dtype=torch.long)
-        loss = nn.CrossEntropyLoss()(logits, labels)
+        labels = torch.zeros(logits.shape[0], dtype=torch.long).cuda()
+        loss = nn.CrossEntropyLoss().cuda()(logits, labels)
 
         return loss, q, k
 
@@ -398,7 +401,7 @@ class LitLinearClassifier(pl.LightningModule):
     def __init__(self, num_classes, pre_trained=True, ckpt_path=None):
         super(LitLinearClassifier, self).__init__()
         if ckpt_path is not None:
-            moco = LitMoCo.load_from_checkpoint(checkpoint_path=ckpt_path)
+            moco = LitMoCoVal.load_from_checkpoint(checkpoint_path=ckpt_path)
             backbone = moco.encoder_q.net
         else:
             backbone = resnet50(pretrained=pre_trained)
@@ -420,7 +423,8 @@ class LitLinearClassifier(pl.LightningModule):
                                     lr=Params.Classifier.LR,
                                     weight_decay=Params.Classifier.WEIGHT_DECAY,
                                     momentum=Params.Classifier.MOMENTUM)
-        return optimizer
+        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, Params.Classifier.EPOCHS)
+        return [optimizer], [lr_scheduler]
 
     def training_step(self, batch, batch_idx):
         x, y = batch

@@ -1,3 +1,5 @@
+import torch
+import random
 from params import Params
 from datasets import Imagenette
 from models import LitLinearClassifier
@@ -6,6 +8,11 @@ from torch.utils.data import DataLoader
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import CSVLogger
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+import numpy as np
+
+torch.manual_seed(0)
+random.seed(0)
+np.random.seed(0)
 
 
 def main():
